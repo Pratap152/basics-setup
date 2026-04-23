@@ -1,0 +1,180 @@
+# create 2 instances with same configuration and Connect both the servers
+#run on both
+
+sudo apt update
+sudo apt install mysql-server -y
+sudo systemctl status mysql
+sudo systemctl enable mysql
+
+# Configure Master Server
+#Open MySQL configuration.
+
+sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+
+#####Find and modify these linesaccording to this.
+
+bind-address = 0.0.0.0
+server-id = 1
+log_bin = /var/log/mysql/mysql-bin.log  
+
+Save and exit  #####
+
+sudo systemctl restart mysql
+# Create Replication User on Master
+#Login to MySQL:
+sudo mysql
+
+#Create replication user:
+mysql>
+
+CREATE USER 'replica'@'%' IDENTIFIED BY 'password';
+GRANT REPLICATION SLAVE ON *.* TO 'replica'@'%';
+FLUSH PRIVILEGES;
+
+Check binary log information:mysql> SHOW MASTER STATUS;
+Example output:
+File: mysql-bin.000001
+Position: 157  (wite down these fields)
+
+mysql> exit
+
+# Allow MySQL Remote Access
+Edit MySQL config again:
+
+sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+
+Ensure:bind-address = 0.0.0.0
+
+Restart MySQL:
+sudo systemctl restart mysql
+Also make sure **port 3306 is open in EC2 security group**.
+
+# Configure Slave Server
+SSH into **slave EC2**.
+Edit config file:
+
+sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+
+Change:server-id = 2
+
+Save and restart MySQL: sudo systemctl restart mysql
+
+# Connect Slave to Master
+Login to MySQL in **slave**: sudo mysql
+
+Run command (replace values): copy below lines and edit in notepad ///// private ip of master(2nd line)  ///// the file name which throughs in the terminal(5th line)  ////(6th line)the port number which throughs in the terminal.
+
+mysql>
+
+CHANGE MASTER TO
+MASTER_HOST='<MASTER_PRIVATE_IP>',     
+MASTER_USER='replica',
+MASTER_PASSWORD='password',
+MASTER_LOG_FILE='mysql-bin.000001',    
+MASTER_LOG_POS=<157>;  
+                
+Start replication:mysql> START SLAVE;
+
+Check replication status:mysql> SHOW SLAVE STATUS\G
+
+Look for these lines:
+Slave_IO_Running: Yes
+Slave_SQL_Running: Yes
+
+If both **YES**, replication is working.
+
+# Test Replication
+Login to **master server** MySQL.
+sudo mysql
+
+Create a database:mysql>CREATE DATABASE companydb;
+Now check in **slave server**:sudo mysql
+
+Run:mysql> SHOW DATABASES;
+
+You will see:companydb
+
+That means **replication works successfully** 🎉
+--------------------------------------------------------------------------------------------
+Yes. After setting up **MySQL Master–Slave replication**, you can access the database through a **web interface** instead of the terminal. The easiest way is to install **phpMyAdmin** with a web server like **Apache HTTP Server** on your **Amazon EC2 instance**. This lets you manage MySQL from a browser. 🌐
+Below is the **complete procedure**.
+
+# 1️⃣ Install Apache Web Server
+Run on the server where you want web access (usually the **master server**).
+
+sudo apt update
+sudo apt install apache2 -y
+
+Start Apache: 
+
+sudo systemctl start apache2
+sudo systemctl enable apache2
+
+Test it in the browser:http://MASTER_PUBLIC_IP
+
+If Apache works, you will see the **Apache default page**.
+---
+# 2️⃣ Install PHP and MySQL Extension
+
+sudo apt install php php-mysql php-mbstring php-zip php-gd php-json php-curl -y
+
+Restart Apache:
+ 
+sudo systemctl restart apache2
+
+# 3️⃣ Install phpMyAdmin
+
+sudo apt install phpmyadmin -y
+
+During installation:
+1. Select **apache2** (to select space+a, press tab for ok enter)
+2. Choose **Yes** for database configuration
+3. Enter a password for phpMyAdmin
+---
+# 4️⃣ Enable phpMyAdmin in Apache
+Run:
+
+sudo phpenmod mbstring
+sudo systemctl restart apache2
+
+Then link phpMyAdmin to Apache:
+
+sudo ln -s /usr/share/phpmyadmin /var/www/html/phpmyadmin
+
+Restart Apache again:
+
+sudo systemctl restart apache2
+
+# 5️⃣ Open EC2 Security Group
+In **Amazon EC2 security group**, add this rule:
+| Port | Protocol | Source    |
+| ---- | -------- | --------- |
+| 80   | TCP      | 0.0.0.0/0 |
+This allows web access.
+
+# 6️⃣ Access MySQL from Browser
+Open your browser: http://MASTER_PUBLIC_IP/phpmyadmin
+Login using:
+Username: admin
+Password: StrongPassword@123
+
+Now you will see the **MySQL databases in a web interface**.
+You can:
+* Create databases
+* Create tables
+* Run SQL queries
+* View replication data---
+
+# 7️⃣ Test Replication from Web
+1. In phpMyAdmin (master), create a database:
+mysql>
+
+CREATE DATABASE testweb;
+
+2. Check the slave server:
+mysql>
+
+SHOW DATABASES;
+
+You should see **testweb**, confirming replication works.
+---
